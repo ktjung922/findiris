@@ -23,7 +23,7 @@ Gaussian 경우 z검정의 아이디어 추가(4개 요소 뭉쳐서 사용위�
 
 	
 3.	classify three classes of iris based by finding pmf
-
+![finding pmf](https://user-images.githubusercontent.com/37677425/80693721-6647b580-8b0e-11ea-8fb9-5d78ffab3927.png)
 위 코드서 K_Fold_cross(0)이 실행되면 위와 같은 구조로 함수가 돌아간다.
 K_Fold_cross{
 		Dataset 랜덤 셔플
