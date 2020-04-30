@@ -1,0 +1,699 @@
+#define _CRT_SECURE_NO_WARNINGS
+
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <algorithm>
+#include <iomanip>
+#include <cmath>
+#include <ctime>
+
+#define MAX_SIZE 512
+
+using namespace std;
+
+
+char inputString[MAX_SIZE]; // iris.data를 읽기위해
+// ifstream에서 읽은 단어들을 해당 tok에 담음, sepal Length -> sltok 이런식으로 tok은 iris의 종류를 받음
+char* sltok = NULL; 
+char* swtok = NULL;
+char* pltok = NULL;
+char* pwtok = NULL;
+char* tok = NULL;
+
+
+//likelihood와 Prioi를 곱한 값을 넣는 구조체 X는 해당 X의 값이며 Pro는 두개를 곱한 확률
+struct Likeli_Mul_Prior {
+	double X;
+	double Pro;
+};
+// 특정 value의 갯수를 담는 구조체
+struct DataCount {
+	double value;
+	int num;
+};
+// sL, sW, pL, pW을 담는 데이터 구조체
+struct Data {
+	double sLength;
+	double sWidth;
+	double pLength;
+	double pWidth;
+};
+
+// 처음 모든 값들을 gnuplot에 찍기위해 값을 카운트할때 필요한 벡터. 
+// iris_list[i][j]라 할때 i-> 0 setosa 1 versicolor 2 virginica   j-> 0 sL 1 sW 2 pL 3 pW
+vector<double> iris_list[3][4];
+
+
+// 구조체들을 담는 벡터들 vect은 iris 총 데이터, count는 finding pmf를 위한 해당 결과값과 갯수(위 list와 같은 구조), Traㅑning은 총 data에서 Training셋으로 쓸 값들, Validation은 Validation으로 쓸 데이터 값들 
+vector<Data*> iris_vect[3];
+vector<DataCount*> iris_count[3][4];
+vector<Data*> iris_Training[3];
+vector<Data*> iris_Validation[3];
+
+// 갯수를 카운터하는 변수
+int num = 0;
+
+// sort를 위한 대소 operation
+bool cmpsL(Data *a, Data *b) {
+	return a->sLength < b->sLength;
+}
+bool cmpsW(Data* a, Data* b) {
+	return a->sWidth < b->sWidth;
+}
+bool cmppL(Data* a, Data* b) {
+	return a->pLength < b->pLength;
+}
+bool cmppW(Data* a, Data* b) {
+	return a->pWidth < b->pWidth;
+}
+//처음 gnuplot을 찍기위해 모든 iris_list sort함수
+void sorting() {
+	for (int k = 0; k < 3; k++) {
+		for (int j = 0; j < 4; j++) {
+			sort(iris_list[k][j].begin(), iris_list[k][j].end());
+		}
+	}
+}
+// 모든 데이터 값의 해당 종류와 해당 요소의 값과 총갯수를 카운터 하는 함수
+void ALLcounting(vector<double> list, ofstream* out) {
+	double valueTemp = list[0];
+	int numTemp = 1;
+	for (int i = 1; i < list.size(); i++) {
+		if (valueTemp == list[i]) {
+			numTemp++;
+		}
+		else {
+			*out << valueTemp << "\t" << numTemp << endl;
+			valueTemp = list[i];
+			numTemp = 1;
+		}
+		if (i == list.size() - 1) {
+			*out << valueTemp << "\t" << numTemp << endl;
+		}
+	}
+}
+
+
+// K-Fold_cross함수
+void k_Fold_Cross(int no);
+// finding pmf를 이용하는 함수들 
+void counting(vector<Data*>, int, int); // training set의 해당 요소의 갯수들을 count하는 함수
+void getPosterior(Data*, double(&Post)[4][3]); // Posterior를 구하는 함수
+void classify(int&, int&, int&); // Validation 값이 들어왔을때 그것이 무엇인지 확인하는 함수
+int ranktest(double d[4][3]); // 무엇인지 확인할때 쓴 함수로 Posterior를 활용하여 윌콕슨 순위합검정을 응용하여 만든 함수
+// gaussian들을 이용하는 함수들
+int GaussianClassify(int& TP, int& FP, int& FN); // 가우시안을 활용하여 Validation값이 무엇인지 확인하는 함수
+void findMeanAnda(vector<Data*> vect, double(&Mean)[4], double(&StandardDeviation)[4]); // Mean과 표준편차를 구하는 함수
+void GaussianCheck(Data* data, double Mean[3][4], double StandardDeviation[3][4], int(&result)[3]); // 가우시안을 활용하여 해당 값이 무엇인지 고르는 계산 함수
+
+int main() {
+	
+	srand((unsigned)time(NULL)); // rand_shuffle 을 위한 srand
+
+	// 해당 maun코드는 iris.data를 읽어 여러 가지로 나눠서 해당 txt로 출력하는 코드들임 (gnuplot을 이용하여 그래프를 만들 때 사용)
+	ifstream inFile("iris.data");
+	ofstream outSet("outSetosa.txt");
+	ofstream outVer("outVersicolor.txt");
+	ofstream outVir("outVirginica.txt");
+
+	while (!inFile.eof()) {
+		inFile.getline(inputString, MAX_SIZE);
+		sltok = strtok(inputString, ",");
+		swtok = strtok(NULL, ",");
+		pltok = strtok(NULL, ",");
+		pwtok = strtok(NULL, ",");
+		tok = strtok(NULL, ",");
+		Data* newdata = new Data;
+		newdata->sLength = stod(sltok);
+		newdata->sWidth = stod(swtok);
+		newdata->pLength = stod(pltok);
+		newdata->pWidth = stod(pwtok);
+
+		if (!strcmp(tok, "Iris-setosa")) {
+			outSet << stod(sltok) << "\t";
+			outSet << stod(swtok) << "\t";
+			outSet << stod(pltok) << "\t";
+			outSet << stod(pwtok) << "\t";
+			outSet << 's' << "\n";
+			num = 0;
+		}
+		else if (!strcmp(tok, "Iris-versicolor")) {
+			outVer << sltok << "\t";
+			outVer << swtok << "\t";
+			outVer << pltok << "\t";
+			outVer << pwtok << "\t";
+			outVer << 'v' << "\n";
+			num = 1;
+
+		}
+		else if (!strcmp(tok, "Iris-virginica")) {
+			outVir << sltok << "\t";
+			outVir << swtok << "\t";
+			outVir << pltok << "\t";
+			outVir << pwtok << "\t";
+			outVir << 'i' << "\n";
+			num = 2;
+		}
+		char* temp;
+		for (int i = 0; i < 4; i++) {
+			if (i == 0) { temp = sltok; }
+			else if (i == 1) { temp = swtok; }
+			else if (i == 2) { temp = pltok; }
+			else if (i == 3) { temp = pwtok; }
+			else temp = NULL;
+			iris_list[num][i].push_back(stod(temp));
+		}
+		iris_vect[num].push_back(newdata);
+	}
+	inFile.close();
+	outSet.close();
+	outVer.close();
+	outVir.close();
+	sorting();
+
+	ofstream outSet0("outSetosa_sL.txt");
+	ofstream outSet1("outSetosa_sW.txt");
+	ofstream outSet2("outSetosa_pL.txt");
+	ofstream outSet3("outSetosa_pW.txt");
+
+	ofstream outVer0("outVersicolor_sL.txt");
+	ofstream outVer1("outVersicolor_sW.txt");
+	ofstream outVer2("outVersicolor_pL.txt");
+	ofstream outVer3("outVersicolor_pW.txt");
+
+	ofstream outVir0("outVirginica_sL.txt");
+	ofstream outVir1("outVirginica_sW.txt");
+	ofstream outVir2("outVirginica_pL.txt");
+	ofstream outVir3("outVirginica_pW.txt");
+	ofstream* out;
+	for (int j = 0; j < 3; j++) {
+		for (int i = 0; i < 4; i++) {
+			if (j == 0) {
+				if (i == 0) { out = &outSet0; }
+				else if (i == 1) { out = &outSet1; }
+				else if (i == 2) { out = &outSet2; }
+				else if (i == 3) { out = &outSet3; }
+				else out = NULL;
+			}
+			else if (j == 1) {
+				if (i == 0) { out = &outVer0; }
+				else if (i == 1) { out = &outVer1; }
+				else if (i == 2) { out = &outVer2; }
+				else if (i == 3) { out = &outVer3; }
+				else out = NULL;
+			}
+			else if (j == 2) {
+				if (i == 0) { out = &outVir0; }
+				else if (i == 1) { out = &outVir1; }
+				else if (i == 2) { out = &outVir2; }
+				else if (i == 3) { out = &outVir3; }
+				else out = NULL;
+			}
+			else out = NULL;
+			ALLcounting(iris_list[j][i], out);
+		}
+	}
+	outSet0.close();
+	outSet1.close();
+	outSet2.close();
+	outSet3.close();
+
+	outVer0.close();
+	outVer1.close();
+	outVer2.close();
+	outVer3.close();
+
+	outVir0.close();
+	outVir1.close();
+	outVir2.close();
+	outVir3.close();
+
+	// 실질적인 분류기 시작 코드
+	int getnumberoftesting; // 사용자한테 넘겨받을 숫자
+
+	while (1) { // 
+		cout << "plase enter number, 0->finding pmf   1->gaussian distribution   2->eixt" << endl;
+		cin >> getnumberoftesting;
+		if (getnumberoftesting == 0 || getnumberoftesting == 1) {
+			k_Fold_Cross(getnumberoftesting); // K_Fold_cross 를 실행 해당 인수가 0이면 by finding pmf 1이면 by Gaussian distribution
+			cout << endl;
+		}
+		else if (getnumberoftesting == 2) {
+			break;
+		}
+		else {
+			cout << "plase enter 0 or 1 or 2 " << endl;
+		}
+	}
+
+	return 0;
+}
+// 5_Fold로 구현 하였음 
+void k_Fold_Cross(int no) {
+	int start = 0;
+	int TP = 0;
+	int FP = 0;
+	int FN = 0;
+	for (int i = 0; i < 3; i++) {
+		random_shuffle(iris_vect[i].begin(), iris_vect[i].end()); // iris data들을 랜덤 셔플(해당 코드 STL 사용)
+	}
+	//number 는 몇번째 교차검증인지. K_fold는 잘못적었는데 나눠진 data set을 어떤건 traning에 어떤건 validation에 넣기위한 변수
+	for (int number = 0; number < 5; number++) {
+		// 150개의 data를 먼저 종류별 3개로 나누고, 1개당 50개를 5로 나눈 10개를 validation 40개를 training에 넣음, (test set 만들지 않음)
+		for (int k_fold = 0; k_fold < 5; k_fold++) {
+			start = k_fold * 10;
+			if (k_fold == number) {
+				for (int j = 0; j < 3; j++) {
+					for (int i = 0; i < 10; i++) {
+						iris_Validation[j].push_back(iris_vect[j][i + start]);
+					}
+				}
+			}
+			else {
+				for (int j = 0; j < 3; j++) {
+					for (int i = 0; i < 10; i++) {
+						iris_Training[j].push_back(iris_vect[j][i + start]);
+					}
+				}
+			}
+		}
+		// 몇번째 교차검증인지 말해주고 시작
+		if (no == 0) { // 사용자한테 0 입력받았으면 by finding pmf
+			cout << "Fold NUM : " << number + 1 << " start" << endl;
+			classify(TP, FP, FN);
+			cout << "Fold NUM : " << number + 1 << " end" << endl << endl;
+		}
+		else if (no == 1) { // 사용자한테 1 입력받았으면 by gaussian 
+			cout << "Fold NUM : " << number + 1 << " start" << endl;
+			GaussianClassify(TP, FP, FN);
+			cout << "Fold NUM : " << number + 1 << " end" << endl << endl;
+
+		}
+		// 트레이닝 셋 벨리데이션 셋 초기화
+		for (int l = 0; l < 3; l++) {
+			iris_Validation[l].clear();
+			iris_Training[l].clear();
+		}
+	}
+	// 마지막 Precision 과 Recall 출력
+	cout << "TP: " << TP << " FP: " << FP << " FN: " << FN << endl;
+	cout << "total Precision : " << (double)TP / (TP + FP) << " Recall : " << (double)TP / (TP + FN) << endl;
+}
+
+void classify(int& TP, int& FP, int& FN) {
+	int number;
+	//count 벡터 초기화
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 4; j++) {
+			iris_count[i][j].clear();
+		}
+	}
+	// count 벡터에 트레이님 셋을 사용하여 해당 요소의 값의 총 개수를 구함
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 4; j++) {
+			//counting  함수 사용
+			counting(iris_Training[i], i, j);
+		}
+	}
+	//Posterior를 담을 변수
+	double posterior[4][3];
+	
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < iris_Validation[i].size(); j++) {
+			//posterior를 구하고
+			getPosterior(iris_Validation[i][j], posterior);
+			//ranktest를 통해 어떤 종류가 가장 맞는지확인
+			number = ranktest(posterior);
+			// 해당 number값에따라 밑에 작업을 통해 TP, FP, FN을 구함
+			if (number == 0) {
+				cout << "it is maybe setosa";
+			}
+			if (number == 1) {
+				cout << "it is maybe versicolor";
+			}
+			if (number == 2) {
+				cout << "it is maybe virginica";
+			}
+
+			cout << endl;
+			if (i == number) {
+				cout << "right answer" << endl;
+				TP++;
+			}
+			else {
+				cout << "wrong answer" << endl;
+				FP++;
+				FN++;
+			}
+			cout <<"finish "<< (i*10) + j+1 <<" set"<<endl<<endl;
+		}
+	}
+}
+//카운팅 함수 정렬된 벡터에서 다음 벡터의 값이랑 현재 값이 같으면 numTemp++ 다를경우 해당 구조체 동적할당하여 벡터에 담고 새로 다시 시작.
+void counting(vector<Data*> vect, int d, int dn) {
+	double valueTemp;
+	int numTemp = 1;
+	if (dn == 0) {
+		sort(vect.begin(), vect.end(), cmpsL);
+		valueTemp = vect[0]->sLength;
+		for (int i = 1; i < vect.size(); i++) {
+			if (valueTemp == vect[i]->sLength) {
+				numTemp++;
+			}
+			else {
+				DataCount* newDataCount = new DataCount;
+				newDataCount->value = valueTemp;
+				newDataCount->num = numTemp;
+				iris_count[d][dn].push_back(newDataCount);
+				valueTemp = vect[i]->sLength;
+				numTemp = 1;
+			}
+
+			if (i == vect.size() - 1) {
+				DataCount* newDataCount = new DataCount;
+				newDataCount->value = valueTemp;
+				newDataCount->num = numTemp;
+				iris_count[d][dn].push_back(newDataCount);
+			}
+		}
+	}
+	else if (dn == 1) {
+		sort(vect.begin(), vect.end(), cmpsW);
+		valueTemp = vect[0]->sWidth;
+		for (int i = 1; i < vect.size(); i++) {
+			if (valueTemp == vect[i]->sWidth) {
+				numTemp++;
+			}
+			else {
+				DataCount* newDataCount = new DataCount;
+				newDataCount->value = valueTemp;
+				newDataCount->num = numTemp;
+				iris_count[d][dn].push_back(newDataCount);
+				valueTemp = vect[i]->sWidth;
+				numTemp = 1;
+			}
+			if (i == vect.size() - 1) {
+				DataCount* newDataCount = new DataCount;
+				newDataCount->value = valueTemp;
+				newDataCount->num = numTemp;
+				iris_count[d][dn].push_back(newDataCount);
+			}
+		}
+	}
+	else if (dn == 2) {
+		sort(vect.begin(), vect.end(), cmppL);
+		valueTemp = vect[0]->pLength;
+		for (int i = 1; i < vect.size(); i++) {
+			if (valueTemp == vect[i]->pLength) {
+				numTemp++;
+			}
+			else {
+				DataCount* newDataCount = new DataCount;
+				newDataCount->value = valueTemp;
+				newDataCount->num = numTemp;
+				iris_count[d][dn].push_back(newDataCount);
+				valueTemp = vect[i]->pLength;
+				numTemp = 1;
+			}
+			if (i == vect.size() - 1) {
+				DataCount* newDataCount = new DataCount;
+				newDataCount->value = valueTemp;
+				newDataCount->num = numTemp;
+				iris_count[d][dn].push_back(newDataCount);
+			}
+		}
+	}
+	else if (dn == 3) {
+		sort(vect.begin(), vect.end(), cmppW);
+		valueTemp = vect[0]->pWidth;
+		for (int i = 1; i < vect.size(); i++) {
+			if (valueTemp == vect[i]->pWidth) {
+				numTemp++;
+			}
+			else {
+				DataCount* newDataCount = new DataCount;
+				newDataCount->value = valueTemp;
+				newDataCount->num = numTemp;
+				iris_count[d][dn].push_back(newDataCount);
+				valueTemp = vect[i]->pWidth;
+				numTemp = 1;
+			}
+			if (i == vect.size() - 1) {
+				DataCount* newDataCount = new DataCount;
+				newDataCount->value = valueTemp;
+				newDataCount->num = numTemp;
+				iris_count[d][dn].push_back(newDataCount);
+			}
+		}
+	}
+}
+//Posterior를 받아서 Rank sum test(순위합검정 활용) 
+int ranktest(double Post[4][3]) {
+	double checking[3] = { 0, 0, 0 };
+	double MAX = 0;
+	double Temp[12];
+	int MAXnum = -1;
+	int n = 0;
+	int numTemp = 0;
+	double rank = 0;
+	double value = -1;
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 4; j++) {
+			Temp[n] = Post[j][i];
+			n++;
+		}
+	}
+
+	sort(Temp, Temp + 12);
+	for (int k = 0; k < 3; k++) {
+		for (int j = 0; j < 4; j++) {
+			value = Post[j][k];
+			for (int i = 0; i < 12; i++) {
+				if (value == Temp[i]) {
+					rank = rank + i + 1;
+					numTemp++;
+				}
+			}
+			checking[k] += rank / (double)numTemp;
+			rank = 0;
+			numTemp = 0;
+		}
+		if (MAX < checking[k]) {
+			MAX = checking[k];
+			MAXnum = k;
+		}
+	}
+	return MAXnum;
+}
+//Posterior를 구하는 함수
+void getPosterior(Data* data, double(&Post)[4][3]) {
+	double Evidence = 0;
+	double Likelihood[3] = { 0, };
+	double x;
+
+	for (int k = 0; k < 4; k++) {
+		if (k == 0) {
+			x = data->sLength;
+		}
+		else if (k == 1) {
+			x = data->sWidth;
+		}
+		else if (k == 2) {
+			x = data->pLength;
+		}
+		else if (k == 3) {
+			x = data->pWidth;
+		}
+		else
+			x = 0;
+
+		if (k == 0) {
+			cout << setw(8) << "sLength:" << setw(10) << x;
+		}
+		else if (k == 1) {
+			cout << setw(8) << "sWidth :" << setw(10) << x;
+		}
+		else if (k == 2) {
+			cout << setw(8) << "pLength:" << setw(10) << x;
+		}
+		else if (k == 3) {
+			cout << setw(8) << "sWidth :" << setw(10) << x ;
+		}
+
+		for (int i = 0; i < 3; i++) {
+			for (int j = 0; j < iris_count[i][k].size(); j++) {
+				if (iris_count[i][k][j]->value == x) {
+					Likelihood[i] = (double)iris_count[i][k][j]->num / (double)50;
+					Evidence += Likelihood[i];
+				}
+			}
+		}
+		cout.setf(ios::left);
+		for (int i = 0; i < 3; i++) {
+			if (Likelihood[i] == 0 && Evidence == 0)
+				Post[k][i] = 0;
+			else
+				Post[k][i] = Likelihood[i] / Evidence;
+			if (i == 0) {
+				cout << "P(setosa | x): " << setw(10) << Post[k][i];
+			}
+			else if (i == 1) {
+				cout << "P(versicolor | x): " << setw(10) << Post[k][i];
+			}
+			else if (i == 2) {
+				cout << "P(virginica | x): " << setw(10) << Post[k][i];
+			}
+		}
+		cout << endl;
+		Evidence = 0;
+		for (int i = 0; i < 3; i++) {
+			Likelihood[i] = 0;
+		}
+	}
+}
+
+int GaussianClassify(int& TP, int& FP, int& FN) {
+	double Mean[3][4] = { 0, };
+	double SD[3][4] = { 0, };
+	int result[3] = { 1,1,1 };
+	for (int i = 0; i < 3; i++) {
+		// Mean과 표준편차를 구함
+		findMeanAnda(iris_Training[i], Mean[i], SD[i]);
+	}
+	cout.setf(ios::left);
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < iris_Validation[i].size(); j++) {
+			cout << "Data->";
+			for (int k = 0; k < 4; k++) {
+				if (k == 0) {
+					cout << "sLength:" << setw(10) << iris_Validation[i][j]->sLength;
+				}
+				else if (k == 1) {
+					cout << "sWIdth:" << setw(10) << iris_Validation[i][j]->sWidth;
+				}
+				else if (k == 2) {
+					cout << "pLength:" << setw(10) << iris_Validation[i][j]->pLength;
+				}
+				else if (k == 3) {
+					cout << "pWidth:" << setw(10) << iris_Validation[i][j]->pWidth;
+				}
+			}
+			cout << endl;
+			//check함수를 활용하여 이게 무엇인지 분류, 결과에 따라 TP, FP, FN구함
+			GaussianCheck(iris_Validation[i][j], Mean, SD, result);
+			for (int k = 0; k < 3; k++) {
+				if (result[k] == 1) {
+					if (k == 0) {
+						cout << "it is maybe setosa" << endl;
+					}
+					else if (k == 1) {
+						cout << "it is maybe versicolor" << endl;
+					}
+					else if (k == 2) {
+						cout << "it is maybe virginica" << endl;
+					}
+					if (k == i) {
+						cout << "right answer" << endl;
+						TP++;
+					}
+					else {
+						cout << "wrong answer" << endl;
+						FP++;
+					}
+				}
+				else {
+					if (k == i) {
+						if (k == 0) {
+							cout << "it is setosa, you miss answer" << endl;
+						}
+						else if (k == 1) {
+							cout << "it is versicolor, you miss answer" << endl;
+						}
+						else if (k == 2) {
+							cout << "it is virginica, you miss answer" << endl;
+						}
+						FN++;
+					}
+				}
+			}
+			
+			for (int k = 0; k < 3; k++) {
+				result[k] = 1;
+			}
+		}
+	}
+
+	return 0;
+}
+// Mean과 표준편차 구하는 함수. 공식 그대로 사용
+void findMeanAnda(vector<Data*> vect, double (&Mean)[4], double (&StandardDeviation)[4]) {
+	double MeanFormula[4] = { 0, };
+	for (int i = 0; i < vect.size(); i++) {
+		Mean[0] += vect[i]->sLength;
+		Mean[1] += vect[i]->sWidth;
+		Mean[2] += vect[i]->pLength;
+		Mean[3] += vect[i]->pWidth;
+	}
+	for (int i = 0; i < 4; i++) {
+		Mean[i] /= vect.size();
+	}
+	for (int i = 0; i < vect.size(); i++) {
+		StandardDeviation[0] += pow(vect[i]->sLength - Mean[0], 2);
+		StandardDeviation[1] += pow(vect[i]->sWidth - Mean[1], 2);
+		StandardDeviation[2] += pow(vect[i]->pLength - Mean[2], 2);
+		StandardDeviation[3] += pow(vect[i]->pWidth - Mean[3], 2);
+	}
+	for (int i = 0; i < 4; i++) {
+		StandardDeviation[i] = sqrt(StandardDeviation[i]/vect.size());
+	}
+}
+//가우시안 결과값을 이용하여 맞는지 아닌지 확인
+void GaussianCheck(Data* data, double Mean[3][4], double StandardDeviation[3][4], int (&result)[3]) {
+	double gaussian[4] = { 0, };
+	double count = 0;
+	int mulnum = 0;
+	for (int j = 0; j < 3; j++) {
+		for (int i = 0; i < 4; i++) {
+			if (i == 0) {
+				gaussian[i] = (data->sLength - Mean[j][i]) / (StandardDeviation[j][i]);
+			}
+			else if (i == 1) {
+				gaussian[i] = (data->sWidth - Mean[j][i]) / (StandardDeviation[j][i]);
+			}
+			else if (i == 2) {
+				gaussian[i] = (data->pLength - Mean[j][i]) / (StandardDeviation[j][i]);
+			}
+			else if (i == 3) {
+				gaussian[i] = (data->pWidth - Mean[j][i]) / (StandardDeviation[j][i]);
+			}
+			else gaussian[i] = 0;
+		}
+		for (int i = 0; i < 4; i++) {
+			if (abs(gaussian[i]) > 3.27) {
+				//count += (abs(gaussian[i]) - 2.576) * 3;
+				count += 12;
+			}
+			else if (abs(gaussian[i]) > 2.576) {
+				//count += (abs(gaussian[i]) - 2.576) * 3;
+				count += 6;
+			}
+			else if (abs(gaussian[i]) > 1.96) {
+				//count += (abs(gaussian[i]) - 1.96) * 1.5;
+				count += 3;
+			}
+			else if (abs(gaussian[i]) > 1.645) {
+				//count += (abs(gaussian[i]) - 1.645);
+				count += 1;
+			}
+			mulnum++;
+		}
+		count *= mulnum;
+		if (count > 15) {
+			result[j] = 0;
+		}
+		mulnum = 0;
+		count = 0;
+	}
+}
