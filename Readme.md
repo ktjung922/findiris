@@ -1,16 +1,17 @@
 사용한 STL들-> sort , random_shuffle, pow, sqrt, 그리고 vector를 사용하였다.
+
 코드 큰틀
 Mian(){
 	그래프 찍기위한 ofstream ifstream 사용
-  data들 같은 종류끼리 벡터에 저장
-  같은 종류의 data의 4가지 요소의 벡터에 저장 sort 및 count함수(직접만듬)로 해당 요소의 값에 대한 개수를 ofstram 및 따로 벡터에 저장.
-	
+	data들 같은 종류끼리 벡터에 저장
+	같은 종류의 data의 4가지 요소의 벡터에 저장 sort 및 count함수(직접만듬)로 해당 요소의 값에 대한 개수를 ofstram 및 따로 벡터에 저장.
+  
   While(){
 		사용자한테 값 입력받음 {0, 1, 2 }3개중 하나
-    0 -> 3번문제인 By finding pmf 인 분류기 작동
-    1 -> 4번문제인 By gaussian 인 분류기 작동
-    2 - > 끝내기
-  } 
+		0 -> 3번문제인 By finding pmf 인 분류기 작동
+		1 -> 4번문제인 By gaussian 인 분류기 작동
+		2 - > 끝내기
+	} 
 }
 
 아이디어
