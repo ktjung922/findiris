@@ -66,7 +66,8 @@ Ranktest{
 
 
 4.	classify three classes of iris based by gaussian distribute
- 
+
+<img src="https://user-images.githubusercontent.com/37677425/80693724-6778e280-8b0e-11ea-96b9-368c9efad163.png" width="90%"></img>
 K_Fold_cross(1)일경우 위와 같은 구성으로 코드가 돌아간다.
 K_Fold_cross{
 		Dataset 랜덤 셔플
